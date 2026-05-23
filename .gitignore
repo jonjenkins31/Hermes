@@ -31,3 +31,12 @@ bench_history.jsonl
 
 # Supervisor + bench-all server logs.
 logs/
+
+# Hermes instance data — contains API keys, configs, memories. NEVER COMMIT.
+~/.hermes/
+.hermes/
+*.env
+.env
+auth.json
+config.yaml
+workspace/config.yaml
