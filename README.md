@@ -1,195 +1,359 @@
-# AgenticLLM
+# Hermes Agent - Local Model Testing Project
 
-A fast local agentic LLM harness on macOS. **Five agents**, all running the same local Gemma 4 26B-A4B model over different agent architectures, so you can directly compare tool-calling latency and reliability across approaches.
+⚕️ **Hermes Agent** testbed with enhanced **local inference support** for offline AI agents.
 
-| Agent | Approach | Tool surface | Loop |
-|---|---|---|---|
-| [`python_jaeger/`](docs/PYTHON_JAEGER.md) ⭐⭐ | **Production self-improving agent** — Pydantic AI core + skill versioning + instance isolation + plugin system + voice loop | core tools + versioned skills + MCP + messaging + voice | `agent.iter()` skip-final intercept |
-| [`python_pydantic_ai/`](docs/PYTHON_PYDANTIC_AI.md) ⭐ | [Pydantic AI](https://github.com/pydantic/pydantic-ai) with custom in-process llama-cpp-python `Model` adapter | 30 typed tools + voice + messaging | `agent.iter()` skip-final intercept |
-| [`python_hermes_xml/`](docs/PYTHON_HERMES_XML.md) | Hand-rolled Nous Function-Calling XML format | 19 tools | `decide → tool → finalize` |
-| [`python_custom_json/`](docs/PYTHON_CUSTOM_JSON.md) | Hand-rolled JSON + GBNF-grammar-constrained decode | 19 tools | `decide → tool → finalize` |
-| [`python_hermes_agent/`](docs/PYTHON_HERMES_AGENT.md) | [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) wrapped behind a local llama-cpp-python OpenAI-compat server | hermes' **40+ tools** | hermes' self-improving agent loop |
+This repository is a **testing and development environment** for the Python Hermes Agent, extended with multi-engine local model support including **llama.cpp**, **MLX**, and other inference runtimes for fully offline operation.
 
-The first four load the model in-process and answer to a strict per-prompt latency budget (warm-cache routing in 0.3–0.5 s). The fifth runs the model behind an HTTP boundary so the full Nous framework can drive it — same offline LLM, very different agent philosophy.
+## 🎯 Purpose
 
-See [docs/FRAMEWORKS.md](docs/FRAMEWORKS.md) for a side-by-side breakdown, [docs/VOCABULARY.md](docs/VOCABULARY.md) for the Tool / Skill / Plugin / Runner contract, and [benchmark/BENCHMARK.md](benchmark/BENCHMARK.md) for the live latency table.
+This project enables:
+- **Local-first AI agents** - Run Hermes Agent entirely offline with GGUF models
+- **Multi-engine inference** - Support for llama.cpp, MLX, vLLM, and other runtimes
+- **Model benchmarking** - Compare cloud vs local models systematically
+- **Agentic robotics** - Framework for real-world robotics requiring local execution
 
-## Quickstart
+## 🏗️ Architecture
+
+```
+Hermes/
+├── python_hermes_agent/          # Core Hermes Agent + Local Extensions
+│   ├── upstream/                 # Original Hermes Agent source
+│   ├── runtime_framework/        # ⭐ Multi-engine runtime support
+│   │   ├── runtimes/            # Engine binaries (llama.cpp, MLX, vLLM)
+│   │   ├── scripts/             # Runtime management tools
+│   │   └── docs/                # Framework documentation
+│   ├── workspace/                # Instance-specific data
+│   │   ├── config.yaml          # Agent configuration
+│   │   ├── memories/            # Conversation history
+│   │   └── logs/                # Runtime logs
+│   ├── skills/                   # Agent capabilities
+│   ├── benchmark/                # Model benchmarking tools
+│   └── scripts/                  # Utility scripts
+├── models/                       # Shared model storage (optional)
+├── docs/                         # Project documentation
+├── agent_doctor.py               # ⭐ Robot pre-flight health checks
+├── supervisor.py                 # ⭐ Restart-on-crash supervisor
+├── main.py                       # Multi-agent orchestrator
+├── model_resolver.py             # Model path resolution
+└── requirements.txt              # Python dependencies
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
 
 ```bash
-python3.11 -m venv .venv
+# macOS with Homebrew
+brew install python@3.11
+
+# Clone the repository
+cd ~/GitHub/GITHUB/Hermes
+
+# Create virtual environment
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+
+# Install Hermes Agent
+pip install -e python_hermes_agent/upstream/.
+
+# Install local inference support
+pip install llama-cpp-python
+# For GPU acceleration on Mac:
+# CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall
 ```
 
-Default model path (all five frameworks read this same GGUF):
-
-```
-~/.lmstudio/models/lmstudio-community/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf
-```
-
-The easiest way to get it is [LM Studio](https://lmstudio.ai/) — search `gemma-4-26B-A4B-it-GGUF`, pick `Q4_K_M`. See [models/README.md](models/README.md) for the repo-local symlink convention.
-
-## Single-command entry points
-
-**Chat (CLI):**
+### Configure Local Models
 
 ```bash
-python -m python_jaeger                                   # ⭐⭐ jaeger, default instance
-python -m python_jaeger --instance work                   # different instance
-python -m python_jaeger "what time is it"                 # one-shot prompt
-python -m python_pydantic_ai                              # ⭐ pydantic_ai chat
-python main.py python_hermes_xml                          # hand-rolled XML
-python main.py python_custom_json                         # hand-rolled JSON + GBNF
+# Set up your first local model
+export LLAMA_CPP_MODEL_PATH=~/.lmstudio/models/lmstudio-community/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+
+# Or use the model picker
+hermes model local/lmstudio/Qwen3.5-9B-Q4_K_M
+
+# Verify configuration
+hermes config show
 ```
 
-**Voice (jaeger + pydantic_ai only):**
+### Run the Agent
 
 ```bash
-python -m python_jaeger --voice                                       # default: two_pass STT, blocking TTS
-python -m python_jaeger --voice --stt-mode continuous                 # alt STT algorithm
-python -m python_jaeger --voice --require-wake-word                   # gated ("hey jaeger, …")
-python -m python_jaeger --voice --require-wake-word --barge-in        # full robot mode (AEC if speexdsp installed)
-python -m python_pydantic_ai --voice --barge-in                       # same flag surface
+# Start a chat session
+hermes chat "Hello, I'm testing local models!"
+
+# Or use quiet mode for quick queries
+hermes chat -q "What's 2+2?"
 ```
 
-Voice combines a Whisper STT plugin (`base.en` fast pass + `medium.en` accurate commit), a Kokoro TTS plugin with chunked async playback for barge-in, and an optional speexdsp AEC layer so the AI's voice gets canceled out of mic input. See [docs/PYTHON_JAEGER.md#voice-loop](docs/PYTHON_JAEGER.md) for the full flag surface.
+## 🦙 Supported Inference Engines
 
-**Messaging gateway (Discord / Telegram / iMessage):**
+| Engine | Best For | Models | Status |
+|--------|----------|--------|--------|
+| **llama.cpp** | General GGUF models | Qwen, Gemma, Llama, Mistral | ✅ Production |
+| **MLX** | Apple Silicon optimization | MLX-native models | ⚠️ Experimental |
+| **vLLM** | High-throughput serving | HuggingFace models | 🔜 Coming soon |
+
+### Engine Management
 
 ```bash
-DISCORD_BOT_TOKEN=… TELEGRAM_BOT_TOKEN=… python -m python_jaeger.plugins.messaging_gateway
+# List available engines
+python python_hermes_agent/runtime_framework/scripts/runtime_manager.py list
+
+# Switch engine version
+python python_hermes_agent/runtime_framework/scripts/runtime_manager.py use llama.cpp 2.16.0
+
+# Check model compatibility
+python python_hermes_agent/runtime_framework/scripts/runtime_manager.py compat /path/to/model.gguf
 ```
 
-## Jaeger instance management
+## 🤖 Robotics Components
 
-Jaeger supports multiple isolated agent personas (instances). Each has its own identity, config, memory, credentials, logs, and skills.
+This project includes critical infrastructure for **autonomous robot operation**:
 
-| Command | What it does |
-|---|---|
-| `python -m python_jaeger --list-instances` | show every instance and which one is active |
-| `python -m python_jaeger --create-instance NAME` | non-interactive create with default identity / config |
-| `python -m python_jaeger --clear-instance NAME` | wipe memory + logs, keep identity / config / credentials / skills (prompts unless `--force`) |
-| `python -m python_jaeger --delete-instance NAME` | nuke entire instance dir (prompts unless `--force`; default instance protected) |
-| `python -m python_jaeger --setup` | interactive wizard (re)setup for the current instance |
-| `python -m python_jaeger --instance NAME` | launch chat against a specific instance |
+### `agent_doctor.py` - Pre-flight Health Checks
 
-In-chat slash commands (read-only, no restart):
-
-```
-/instances     list all instances
-/whoami        show current instance + identity
-```
-
-Mutating an instance (delete / clear / create) always requires the CLI flag and a restart; the chat loop holds an exclusive `fcntl` lock on its instance dir.
-
-## Head-to-head benchmark
-
-All four in-process frameworks share a 23-prompt routing benchmark. Run one framework at a time for clean Metal context:
+Run before deploying or letting the robot operate autonomously:
 
 ```bash
-python benchmark/bench.py --only python_jaeger --with-jaeger
-python benchmark/bench.py --only python_pydantic_ai
-python benchmark/bench.py --only python_hermes_xml
-python benchmark/bench.py --only python_custom_json
+# Quick health check
+.venv/bin/python agent_doctor.py
+
+# Verbose output
+.venv/bin/python agent_doctor.py --verbose
 ```
 
-Current status: **all four pass 23/23** on a fresh Metal context (multi-framework sessions can drift due to Gemma 4 temp=0 variance). See [benchmark/BENCHMARKING.md](benchmark/BENCHMARKING.md) for trend analysis and [benchmark/BENCH_RESULTS.md](benchmark/BENCH_RESULTS.md) for historical numbers.
+**Checks performed:**
+- ✅ Python version compatibility (3.10-3.12)
+- ✅ Model file existence and accessibility
+- ✅ Memory integrity
+- ✅ Disk space availability
+- ✅ Required dependencies installed
 
-### Voice plugin perf (no hardware required)
+**Designed for:**
+- systemd units that gate robot startup on health check success
+- Pre-deployment verification before autonomous operation
+- CI/CD pipelines for robot software updates
 
-| Component | Result |
-|---|---|
-| AEC (speexdsp) | 31.7 µs per 10 ms frame — **315× realtime** |
-| ReferenceBuffer round-trip | 1.14 µs / op |
-| Kokoro TTS load | 5.3 s cold (one-time at startup) |
-| Kokoro TTS synth | RTF 0.12–0.17 (5–8× faster than playback) |
-| Whisper STT load (base.en, Metal) | 0.1 s |
-| Whisper STT transcribe | ~10 ms / s of audio |
+### `supervisor.py` - Restart-on-Crash Supervisor
 
-## Shared design ideas
+Keeps the robot agent running unattended with exponential backoff:
 
-Every framework here implements the same core ideas with different formats:
+```bash
+# Supervise a voice loop
+python supervisor.py -- python -m python_jaeger.plugins.voice_loop
 
-- **Skip-final-LLM optimization** — when a tool's dict result IS the user-facing answer (`get_time`, `calculate`, `remember`, `delete_file`, etc.), intercept after the tool returns and skip the second LLM call. Saves ~280 ms per simple command (~3× faster).
-- **Prewarm** — run a trivial turn at startup to prime the KV cache so the first user-facing turn isn't cold.
-- **Sandboxed file ops** — agents can write only inside their own workspace (`workspace/` or `<instance>/skills/`); paths like `~/Desktop` get redirected with an honest "I saved it here instead" reply.
-- **MANDATORY tool routing rules** — short imperative system-prompt rules that combat the failure mode where small local models say "OK, I'll remember" without actually calling `remember`. 4 rules, near the top of the prompt.
-- **with_memory gate** — by default, every prompt runs against a fresh context (bench-clean). Set `--with-memory` or `JAEGER_WITH_MEMORY=1` to accumulate conversation history.
-- **Vocabulary contract** — every component is exactly one of Tool / Skill / Plugin / Runner (or infra: Library / Transport / Model / Hardware). See [docs/VOCABULARY.md](docs/VOCABULARY.md).
-
-The fifth framework (`python_hermes_agent/`) wraps an external agent process and is its own world — see its dedicated doc.
-
-## Production capabilities (jaeger)
-
-The flagship framework, [`python_jaeger`](docs/PYTHON_JAEGER.md), adds production guarantees on top of the routing core:
-
-- **Instance isolation** — each agent persona has its own `<instance>/` directory: identity, config, manifest, memory, skills, credentials, logs. Multi-tenant by design. Managed via `--list-instances` / `--create-instance` / `--clear-instance` / `--delete-instance`.
-- **Skill versioning + smoke tests** — agent-authored skills land in `<instance>/skills/<name>_v<N>/` with a `SKILL.md` and a `tests/smoke_test.py`. The skill loader runs the smoke test before activation; failure means the skill is rejected.
-- **Credential store** — secrets in `<instance>/credentials/` are off-limits to direct file reads; the agent uses `get_credential(name)` instead and never echoes the value back.
-- **Plugin system** — `plugins/mcp/` (MCP servers), `plugins/{discord,telegram,imessage}/` (messaging), `plugins/{kokoro_tts,whisper_stt}/` (voice), with `plugins/messaging_gateway.py` and `plugins/voice_loop.py` as daemon orchestrators. `core/runners/thinking_runner.py` for background CoT. All opt-in via flags or env vars.
-- **Git auto-commit per write** — every agent-authored `file_write` / `append_file` / `delete_file` lands as a real git commit inside the instance, giving a true authorship audit trail.
-
-## Repo layout
-
-```
-AgenticLLM/
-├── README.md                  ← you are here
-├── docs/
-│   ├── VOCABULARY.md          ← Tool / Skill / Plugin / Runner — read first
-│   ├── PYTHON_JAEGER.md       ← per-framework deep dives
-│   ├── PYTHON_PYDANTIC_AI.md
-│   ├── PYTHON_HERMES_XML.md
-│   ├── PYTHON_CUSTOM_JSON.md
-│   ├── PYTHON_HERMES_AGENT.md
-│   ├── FRAMEWORKS.md          ← side-by-side comparison
-│   ├── ARCHITECTURE.md
-│   ├── AGENTIC_CODING_PRACTICE.md
-│   ├── SETUP.md
-│   └── PROJECT.md
-├── benchmark/                 ← 23-prompt head-to-head, history, dispatcher
-├── models/                    ← gitignored; symlink to GGUF lives here
-├── python_jaeger/             ← self-improving agent + plugin system
-│   ├── __main__.py            ← `python -m python_jaeger` entry
-│   ├── main.py                ← CLI dispatch + chat loop
-│   ├── core/
-│   │   ├── audio/             ← AEC, ReferenceBuffer, chimes
-│   │   ├── runners/           ← thinking_runner, cron_runner
-│   │   └── tools/             ← atomic LLM-callable functions
-│   ├── plugins/
-│   │   ├── kokoro_tts/        ← TTS (speak, play_async, chunked)
-│   │   ├── whisper_stt/       ← STT (two_pass + continuous)
-│   │   ├── mcp/, discord/, telegram/, imessage/
-│   │   ├── voice_loop.py      ← daemon: STT → agent → TTS
-│   │   └── messaging_gateway.py  ← daemon: multi-channel messaging
-│   ├── skills/                ← framework-shipped skills (read-only zone)
-│   └── instance/<name>/       ← per-instance state (agent-writable zone)
-├── python_pydantic_ai/        ← Pydantic AI reference (same plugin shape as jaeger)
-├── python_hermes_xml/         ← hand-rolled XML
-├── python_custom_json/        ← hand-rolled JSON + GBNF
-├── python_hermes_agent/       ← Nous upstream wrapped over local HTTP
-├── main.py                    ← top-level dispatcher for the in-process frameworks
-├── model_resolver.py          ← AGENTICLLM_MODEL_PATH → repo-local → LM Studio fallback chain
-├── agent_doctor.py            ← pre-flight health check
-└── requirements.txt
+# Supervise with custom restart limit
+python supervisor.py --max-restarts 50 -- python main.py python_pydantic_ai
 ```
 
-## Why five frameworks?
+**Features:**
+- 🔄 Automatic restart on crash (segfaults, OOM, etc.)
+- ⏱️ Exponential backoff (1s → 60s max)
+- 📝 Crash logging with stderr capture
+- 🎯 Backoff resets after "good runs" (>60s uptime)
+- 🛑 Clean shutdown on Ctrl-C (forwards SIGTERM)
 
-The goal is to surface where prompt design, output format, and agent architecture actually matter for tool-calling latency and reliability — using the **same model weights** across all five so any quality gap is purely an agent gap, not a model gap.
+**Use cases:**
+- Long-running robot assistants that must stay up 24/7
+- Production deployments where manual restart isn't feasible
+- Metal/llama-cpp segfault recovery (common with GPU acceleration)
 
-- **`python_jaeger`** — when you need a real shipping agent (skill versioning, instance isolation, plugin system, voice + messaging, sandbox guarantees).
-- **`python_pydantic_ai`** — when speed matters and you don't need skill authoring. Same routing core as jaeger, much smaller surface.
-- **`python_hermes_xml`** — reference for the Hermes function-calling format the underlying model series was trained on.
-- **`python_custom_json`** — strict GBNF-grammar tool routing, useful when the model is small or untrusted and you need hard format guarantees.
-- **`python_hermes_agent`** — sanity check: same Gemma weights, full Nous production framework. Any difference is pure agent-architecture, since the model is identical.
+### `main.py` - Multi-Agent Orchestrator
 
-## License
+Coordinates multiple agent instances and frameworks:
 
-MIT — see [LICENSE](LICENSE).
+```bash
+# Run different agent frameworks
+python main.py python_hermes_xml "search the web for..."
+python main.py python_pydantic_ai "tell me about..."
+```
+
+### `model_resolver.py` - Model Path Resolution
+
+Resolves model paths from common locations:
+- `~/.lmstudio/models/`
+- `~/GitHub/GITHUB/Hermes/models/`
+- `~/.ollama/models/`
+
+```python
+from model_resolver import resolve_model_path
+model_path = resolve_model_path()  # Auto-detects available models
+```
+
+## 📊 Model Benchmarking
+
+This project includes comprehensive benchmarking tools for comparing models:
+
+```bash
+# Run benchmarks on a specific model
+cd python_hermes_agent
+python benchmark/run_benchmark.py --model qwen3.5-9b
+
+# Compare multiple models
+python benchmark/batch_benchmark.py --models qwen3.5-9b,gemma4-e2b,llama3.2-3b
+
+# View results
+cat ~/.hermes/benchmarks/results.json | jq
+```
+
+### Benchmark Categories
+
+- **Speed** - Tokens/sec, latency
+- **Accuracy** - Factual correctness
+- **Coding** - Code generation, debugging
+- **Reasoning** - Math, logic puzzles
+- **Tool Use** - Function calling, file operations
+
+## 🔧 Configuration
+
+### Basic Setup (`workspace/config.yaml`)
+
+```yaml
+model:
+  provider: llama-cpp
+  default: local/lmstudio/Qwen3.5-9B-Q4_K_M
+
+agent:
+  max_turns: 90
+  gateway_timeout: 1800
+```
+
+### Environment Variables
+
+```bash
+# Model path (required for llama-cpp)
+export LLAMA_CPP_MODEL_PATH=/path/to/model.gguf
+
+# GPU layers (optional, default: 35)
+export LLAMA_CPP_GPU_LAYERS=35
+
+# Context size (optional, default: 8192)
+export LLAMA_CPP_CTX_SIZE=8192
+
+# Hermes home directory
+export HERMES_HOME=~/.hermes
+```
+
+## 📁 Directory Guide
+
+### `python_hermes_agent/`
+
+All Hermes Agent code lives here - this is what gets duplicated for new instances.
+
+| Subdirectory | Purpose |
+|--------------|---------|
+| `upstream/` | Original Hermes Agent source (don't modify) |
+| `runtime_framework/` | Multi-engine inference support |
+| `workspace/` | Your instance data (config, memories, logs) |
+| `skills/` | Agent capabilities and tools |
+| `benchmark/` | Model testing and comparison tools |
+
+### `~/.hermes/`
+
+User-specific data (NOT duplicated with agent):
+
+| Directory | Purpose |
+|-----------|---------|
+| `config.yaml` | Active configuration |
+| `memories/` | Conversation history |
+| `logs/` | Runtime logs |
+| `benchmarks/` | Test results |
+| `sessions/` | Active session data |
+
+## 🧪 Testing Local Models
+
+### Quick Tests
+
+```bash
+# Test model loading
+hermes chat -q "Say hello"
+
+# Test tool use
+hermes chat -q "List files in current directory"
+
+# Test reasoning
+hermes chat -q "What's the square root of 144?"
+```
+
+### Comprehensive Testing
+
+```bash
+# Full benchmark suite
+python python_hermes_agent/benchmark/comprehensive_benchmark.py
+
+# Specific category
+python python_hermes_agent/benchmark/comprehensive_benchmark.py --category coding
+```
+
+## 🤝 Contributing
+
+This is a **test project** for Hermes Agent with local model extensions. Contributions welcome:
+
+1. **Engine Support** - Add new inference backends (vLLM, tensorrt-llm, etc.)
+2. **Model Testing** - Benchmark new GGUF models
+3. **Performance** - Optimize local inference speed
+4. **Documentation** - Improve setup guides and troubleshooting
+
+## 📝 License
+
+- **Hermes Agent**: Original license applies (see `python_hermes_agent/upstream/LICENSE`)
+- **Extensions**: MIT License
+- **Models**: Respective model licenses (check each model's license)
+
+## 🔗 Resources
+
+- **Hermes Agent Docs**: https://hermes-agent.nousresearch.com/docs
+- **llama.cpp**: https://github.com/ggerganov/llama.cpp
+- **MLX**: https://github.com/ml-explore/mlx
+- **GGUF Models**: https://huggingface.co/models?library=gguf
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**"Unknown provider 'llama-cpp'"**
+```bash
+# Make sure llama-cpp-python is installed
+pip install llama-cpp-python
+
+# Set model path
+export LLAMA_CPP_MODEL_PATH=/path/to/model.gguf
+```
+
+**"API key required" error**
+```bash
+# llama-cpp doesn't need an API key - this is a bug
+# Set a dummy key as workaround
+export LLAMA_CPP_API_KEY=not-needed
+```
+
+**Model loads slowly**
+```bash
+# Increase GPU layers for Metal acceleration
+export LLAMA_CPP_GPU_LAYERS=99
+
+# Or reduce context size
+export LLAMA_CPP_CTX_SIZE=4092
+```
+
+## 📧 Support
+
+For issues specific to this local model extension:
+- Open an issue on GitHub
+- Check the `docs/` directory for guides
+
+For Hermes Agent core issues:
+- Visit https://hermes-agent.nousresearch.com/docs
+- Join the Nous Research Discord
 
 ---
 
-Built by [Jenkins Robotics](https://www.youtube.com/@Jenkins_Robotics).
+**Built with ⚕️ Hermes Agent + 🦙 llama.cpp**
+
+*Last updated: May 2026*
+
+---
+
+**Built by [Jenkins Robotics](https://www.youtube.com/@Jenkins_Robotics).**
 
 [YouTube](https://www.youtube.com/@Jenkins_Robotics) · [Patreon](https://www.patreon.com/JenkinsRobotics) · [Discord](https://discord.gg/sAnE5pRVyT) · [GitHub](https://jenkinsrobotics.github.io)
